@@ -9,7 +9,6 @@ dependencies = [
     "matplotlib>=3.10.6",
     "numpy>=2.3.3",
     "pandas>=3.0.5",
-    "pyqt5>=5.15.11",
     "python-multipart>=0.0.32",
     "scipy>=1.17.1",
     "uvicorn[standard]>=0.52.4",
