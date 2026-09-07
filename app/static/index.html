@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChemTitrate Analytics | 전위차 적정 분석 플랫폼</title>
+  <meta name="description" content="FastAPI 기반 비동기 전위차 적정(Potentiometric Titration) 분석 및 Savitzky-Golay 필터 종말점 자동 검출 웹 플랫폼">
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <!-- Plotly.js CDN for Interactive Scientific Charts -->
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+      <div class="header-container">
+        <div class="brand-group">
+          <div class="brand-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 2v7.31"></path>
+              <path d="M14 9.3V2"></path>
+              <path d="M8.5 2h7"></path>
+              <path d="M14 9.3a6.5 6.5 0 1 1-4 0"></path>
+              <path d="M5.52 16h12.96"></path>
+            </svg>
+          </div>
+          <div>
+            <h1 class="brand-title">ChemTitrate <span class="brand-badge">PRO</span></h1>
+            <p class="brand-subtitle">전위차 적정 분석 & Savitzky-Golay 비동기 종말점 검출기</p>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <div class="status-chip">
+            <span class="status-dot"></span>
+            <span id="server-status">FastAPI 비동기 온라인</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Workspace Grid -->
+    <main class="main-content">
+      <!-- Left Control Panel -->
+      <aside class="control-panel">
+        <!-- 1. CSV File Upload Section -->
+        <section class="card glass-card upload-section">
+          <div class="card-header">
+            <span class="step-num">1</span>
+            <div>
+              <h2 class="card-title">데이터 업로드 (CSV)</h2>
+              <p class="card-desc">적정 측정 데이터가 담긴 CSV 파일을 첨부하세요.</p>
+            </div>
+          </div>
+
+          <div id="drop-zone" class="drop-zone">
+            <input type="file" id="file-input" accept=".csv" class="file-input-hidden">
+            <div class="drop-zone-content">
+              <div class="upload-icon-wrapper">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="12" y1="18" x2="12" y2="12"></line>
+                  <line x1="9" y1="15" x2="12" y2="12"></line>
+                  <line x1="15" y1="15" x2="12" y2="12"></line>
+                </svg>
+              </div>
+              <p class="drop-primary">파일을 이곳으로 드래그하거나 <span>클릭하여 탐색</span></p>
+              <p class="drop-hint">지원 형식: UTF-8 / CP949 .CSV</p>
+            </div>
+          </div>
+
+          <!-- File Info Banner -->
+          <div id="file-info-box" class="file-info-box hidden">
+            <div class="file-meta">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+              </svg>
+              <span id="active-filename" class="active-filename">data2.csv</span>
+            </div>
+            <span id="active-file-badge" class="badge badge-success">준비됨</span>
+          </div>
+        </section>
+
+        <!-- 2. Analysis Parameters Section -->
+        <section class="card glass-card param-section">
+          <div class="card-header">
+            <span class="step-num">2</span>
+            <div>
+              <h2 class="card-title">분석 파라미터 설정</h2>
+              <p class="card-desc">실행 대상 및 필터링 조건을 구성합니다.</p>
+            </div>
+          </div>
+
+          <form id="param-form" class="param-form" onsubmit="return false;">
+            <!-- Target Run Selection -->
+            <div class="form-group">
+              <label for="target-run-select" class="form-label">
+                <span>분석 대상 (실행 선택)</span>
+                <span class="badge badge-info" id="detected-runs-count">감지된 실행: 1개</span>
+              </label>
+              <select id="target-run-select" class="form-control select-control">
+                <option value="실행 1">실행 1</option>
+              </select>
+              <p class="input-tip">CSV 컬럼 헤더에서 자동 감지된 적정 실행 목록입니다.</p>
+            </div>
+
+            <!-- Time Range Filter -->
+            <div class="form-group">
+              <div class="label-with-actions">
+                <span class="form-label-text">분석 시간 구간 설정 (초, s)</span>
+                <button type="button" id="btn-reset-time-range" class="text-action-btn">구간 자동 최적화</button>
+              </div>
+              <div class="dual-input-row">
+                <div class="input-col">
+                  <label for="start-time-input" class="sub-label">시작 시간</label>
+                  <div class="input-with-unit">
+                    <input type="number" id="start-time-input" class="form-control" value="60" min="0" step="0.5">
+                    <span class="unit-tag">s</span>
+                  </div>
+                </div>
+                <div class="input-col">
+                  <label for="end-time-input" class="sub-label">종료 시간</label>
+                  <div class="input-with-unit">
+                    <input type="number" id="end-time-input" class="form-control" value="400" min="0" step="0.5">
+                    <span class="unit-tag">s</span>
+                  </div>
+                </div>
+              </div>
+              <div class="time-range-summary">
+                <span id="data-time-range-hint">전체 데이터 범위: 0.00s ~ 517.64s</span>
+              </div>
+            </div>
+
+            <!-- Savitzky-Golay Window Length (Must be Odd) -->
+            <div class="form-group">
+              <div class="label-with-actions">
+                <label for="window-len-input" class="form-label-text">
+                  윈도우 크기 (window_len)
+                </label>
+                <span class="badge badge-warning" id="window-odd-badge">반드시 홀수(Odd)</span>
+              </div>
+              <div class="input-with-unit">
+                <input type="number" id="window-len-input" class="form-control" value="3501" min="3" step="2">
+                <span class="unit-tag">pts</span>
+              </div>
+              
+              <!-- Odd Number Validation Warning / Quick Fix -->
+              <div id="even-warning-box" class="even-warning-box hidden">
+                <div class="warning-content">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                  </svg>
+                  <span>짝수는 위상 왜곡을 유발합니다!</span>
+                </div>
+                <button type="button" id="btn-fix-to-odd" class="btn btn-sm btn-accent">
+                  홀수(<span id="suggested-odd-val">3503</span>)로 보정
+                </button>
+              </div>
+
+              <!-- Scientific Explanation Accordion Card -->
+              <div class="info-card">
+                <div class="info-header" id="toggle-why-odd">
+                  <div class="info-title">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span>왜 window_len은 반드시 홀수여야 할까요?</span>
+                  </div>
+                  <span class="info-chevron">▼</span>
+                </div>
+                <div class="info-body" id="why-odd-content">
+                  <p>
+                    <strong>Savitzky-Golay 필터</strong>는 각 데이터 지점을 중심으로 좌우 대칭인 
+                    윈도우 <code>[-m, +m]</code> 범위의 점들을 국소 다항식 피팅합니다.
+                  </p>
+                  <p>
+                    윈도우 크기는 <code>2m + 1</code>개가 되므로, 정가운데 중심점(m=0)을 정확히 기준 삼으려면 
+                    <strong>반드시 홀수</strong>여야 합니다.
+                  </p>
+                  <p class="info-caution">
+                    ⚠️ 짝수 크기를 사용할 경우 중심점이 데이터와 데이터 사이의 가상 위치에 놓이게 되어, 
+                    <strong>시간 축 위상 왜곡(Phase shift/시간 지연)</strong>이 발생하여 정확한 적정 종말점 위치가 변형됩니다.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Polynomial Order -->
+            <div class="form-group">
+              <label for="poly-order-input" class="form-label">
+                <span>다항식 차수 (poly_order)</span>
+                <span class="sub-tip">기본 3차 (평활화 및 1차 미분에 최적)</span>
+              </label>
+              <input type="number" id="poly-order-input" class="form-control" value="3" min="1" max="5">
+            </div>
+
+            <!-- Action Button -->
+            <button type="button" id="btn-run-analysis" class="btn btn-primary btn-block btn-lg">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span>비동기 분석 실행 (Run Analysis)</span>
+            </button>
+          </form>
+        </section>
+      </aside>
+
+      <!-- Right Analytics Dashboard -->
+      <main class="dashboard-area">
+        <!-- Initial Blank State -->
+        <div id="empty-state" class="empty-state card glass-card">
+          <div class="empty-icon-wrapper">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 3v18h18"></path>
+              <path d="m19 9-5 5-4-4-3 3"></path>
+            </svg>
+          </div>
+          <h2 class="empty-title">CSV 파일을 업로드해 주세요</h2>
+          <p class="empty-desc">
+            좌측 <strong>[데이터 업로드 (CSV)]</strong> 영역에 전위차 적정 데이터 파일을 드래그하여 첨부하세요.<br>
+            파일이 업로드되면 실행 목록과 시간 범위가 자동으로 감지되며 즉시 종말점 분석을 진행할 수 있습니다.
+          </p>
+        </div>
+
+        <!-- Active Analysis View -->
+        <div id="results-container" class="results-container hidden">
+          <!-- Metrics Overview Bar -->
+          <section class="metrics-grid">
+            <!-- 1. Endpoint Time -->
+            <div class="metric-card glass-card">
+              <div class="metric-top">
+                <span class="metric-label">적정 종말점 (Endpoint Time)</span>
+                <div class="metric-icon-bubble amber">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                </div>
+              </div>
+              <div class="metric-value-row">
+                <span id="metric-endpoint-time" class="metric-value">--</span>
+                <span class="metric-unit">s</span>
+              </div>
+              <span class="metric-subtext">1차 미분(dV/dt) 최대 피크 시점</span>
+            </div>
+
+            <!-- 2. Endpoint Voltage -->
+            <div class="metric-card glass-card">
+              <div class="metric-top">
+                <span class="metric-label">종말점 전압 (Voltage)</span>
+                <div class="metric-icon-bubble emerald">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                  </svg>
+                </div>
+              </div>
+              <div class="metric-value-row">
+                <span id="metric-endpoint-voltage" class="metric-value">--</span>
+                <span class="metric-unit">mV</span>
+              </div>
+              <span class="metric-subtext">평활화 곡선 상의 해당 전위</span>
+            </div>
+
+            <!-- 3. Max Slope (dV/dt) -->
+            <div class="metric-card glass-card">
+              <div class="metric-top">
+                <span class="metric-label">최대 기울기 (Max dV/dt)</span>
+                <div class="metric-icon-bubble cyan">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                    <polyline points="16 7 22 7 22 13"></polyline>
+                  </svg>
+                </div>
+              </div>
+              <div class="metric-value-row">
+                <span id="metric-endpoint-slope" class="metric-value">--</span>
+                <span class="metric-unit">mV/s</span>
+              </div>
+              <span class="metric-subtext">당량점 반응 최대 순간 변화율</span>
+            </div>
+
+            <!-- 4. Computation Stats -->
+            <div class="metric-card glass-card">
+              <div class="metric-top">
+                <span class="metric-label">비동기 처리 성능</span>
+                <div class="metric-icon-bubble purple">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                    <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                    <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                    <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                  </svg>
+                </div>
+              </div>
+              <div class="metric-value-row">
+                <span id="metric-elapsed" class="metric-value">--</span>
+                <span class="metric-unit">ms</span>
+              </div>
+              <span id="metric-pts-info" class="metric-subtext">총 -- 포인트 비차단 연산 완료</span>
+            </div>
+          </section>
+
+          <!-- Interactive Dual Charts -->
+          <section class="charts-wrapper card glass-card">
+            <div class="charts-toolbar">
+              <div class="toolbar-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 3v18h18"></path>
+                  <path d="M18 17V9"></path>
+                  <path d="M13 17V5"></path>
+                  <path d="M8 17v-3"></path>
+                </svg>
+                <h3 id="chart-main-title">전위차 적정 곡선 & 1차 도함수 정밀 분석</h3>
+              </div>
+              <div class="toolbar-actions">
+                <button id="btn-chart-reset-zoom" class="btn btn-sm btn-secondary" title="차트 줌 범위를 기본값으로 복원">
+                  줌 리셋
+                </button>
+                <button id="btn-export-titration-png" class="btn btn-sm btn-secondary" title="상단 적정 곡선만 PNG로 저장">
+                  📈 적정 곡선 PNG
+                </button>
+                <button id="btn-export-deriv-png" class="btn btn-sm btn-secondary" title="하단 1차 도함수(dV/dt) 곡선만 PNG로 저장">
+                  📉 1차 도함수 PNG
+                </button>
+                <button id="btn-export-full-png" class="btn btn-sm btn-accent" title="적정 곡선과 1차 도함수가 모두 포함된 2단 전체 고해상도 PNG 저장">
+                  🖼️ 2단 전체 PNG 저장
+                </button>
+              </div>
+            </div>
+
+            <!-- Plotly Chart Containers -->
+            <div class="dual-chart-container">
+              <!-- Top Chart: Titration Curve -->
+              <div id="chart-titration" class="plot-canvas"></div>
+              <!-- Bottom Chart: 1st Derivative Curve -->
+              <div id="chart-derivative" class="plot-canvas"></div>
+            </div>
+          </section>
+
+          <!-- Parameter Summary & Export Section -->
+          <section class="summary-section card glass-card">
+            <div class="summary-header">
+              <h3 class="summary-title">분석 조건 및 결과 요약 명세</h3>
+              <button id="btn-export-csv" class="btn btn-sm btn-accent">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>분석 데이터 CSV 다운로드</span>
+              </button>
+            </div>
+            <div class="table-responsive">
+              <table class="summary-table">
+                <thead>
+                  <tr>
+                    <th>분석 항목</th>
+                    <th>설정값 / 결과</th>
+                    <th>단위</th>
+                    <th>설명</th>
+                  </tr>
+                </thead>
+                <tbody id="summary-table-body">
+                  <!-- Generated dynamically via JS -->
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </main>
+    </main>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="loading-overlay hidden">
+    <div class="loader-content">
+      <div class="lab-spinner"></div>
+      <p id="loading-text" class="loading-text">FastAPI 비동기 스레드에서 Savitzky-Golay 연산 중...</p>
+      <span class="loading-sub">대용량 시계열 데이터를 논블로킹으로 처리하고 있습니다.</span>
+    </div>
+  </div>
+
+  <!-- Main JavaScript -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+[project]
+name = "chemical-asc"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.141.1",
+    "matplotlib>=3.10.6",
+    "numpy>=2.3.3",
+    "pandas>=3.0.5",
+    "pyqt5>=5.15.11",
+    "python-multipart>=0.0.32",
+    "scipy>=1.17.1",
+    "uvicorn[standard]>=0.52.4",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]
